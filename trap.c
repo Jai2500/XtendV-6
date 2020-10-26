@@ -51,6 +51,10 @@ trap(struct trapframe *tf)
     if(cpuid() == 0){
       acquire(&tickslock);
       ticks++;
+      
+      // Increase the runtime for running proccesses
+      updaterunprocs();
+
       wakeup(&ticks);
       release(&tickslock);
     }
@@ -100,6 +104,21 @@ trap(struct trapframe *tf)
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
     exit();
 
+#ifdef FCFS
+  // Do not yield
+
+#else
+#ifdef PBS
+  // Check for the arrival of higher priority process
+
+#else 
+#ifdef MLFQ
+  // Check for another process that is equal or higher process in the queue
+  // Demote the current process
+
+#else 
+  // ROUND ROBIN
+
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
   if(myproc() && myproc()->state == RUNNING &&
@@ -109,4 +128,9 @@ trap(struct trapframe *tf)
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
     exit();
+
+#endif
+#endif
+#endif
+
 }
