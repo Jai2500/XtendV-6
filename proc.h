@@ -13,6 +13,12 @@ struct cpu {
 extern struct cpu cpus[NCPU];
 extern int ncpu;
 
+// Per process-Queue state
+struct qstats {
+  int qtime[NQUE];             // Queue times for each process
+  int actualqtime[NQUE];       // Actual Queue times for each process
+};
+
 //PAGEBREAK: 17
 // Saved registers for kernel context switches.
 // Don't need to save all the segment registers (%cs, etc),
@@ -54,6 +60,8 @@ struct proc {
   uint rtime;                  // Process run time
   uint priority;               // Process priority
   uint lastqtime;              // Process time of joining the latest queue
+  struct qstats stat;          // Prrocess stats of queues for MLFQ
+  uint nruns;                  // Number of times the process has been scheduled
 };
 
 // #ifdef MLFQ

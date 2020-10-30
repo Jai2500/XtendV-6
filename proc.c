@@ -93,6 +93,11 @@ found:
   p->rtime = 0;
   p->priority = 60; // Default priority
 
+#ifdef MLFQ
+  pushback(ProcQueues[0], p); // Pushback to the highest priority queue
+  p->lastqtime = ticks;
+#endif
+
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -496,11 +501,15 @@ mlfqscheduler(void)
   for(;;){
     acquire(&ptable.lock);
     for(int i = 0; i < NQUE; i++){
-      struct proc *p = pop(ProcQueues[i]);
+      int pos = ProcQueues[i]->start;
+      struct proc *p = ProcQueues[i]->list[pos];
       while (p)
       {
-        if(1){} // Check whether the process is dead
-        // If not
+        if(p->killed || p->pid == 0 || p->state != RUNNABLE){ // Check whether the process is dead
+          pos = ProcQueues[i]->next[pos];
+          p = ProcQueues[i]->list[pos];
+          pop(ProcQueues[i]);
+        }
         else{
           finalp = p;
           break;
@@ -514,6 +523,14 @@ mlfqscheduler(void)
       release(&ptable.lock);
       continue;
     }
+    
+    int qno = getmyqno(finalp);
+    if(qno < 0)
+      panic("Invalid queue for the process\n");
+
+    removeproc(ProcQueues[qno], finalp);
+    finalp->lastqtime = ticks;
+    finalp->nruns++;
 
     c->proc = finalp;
     switchuvm(finalp);
@@ -523,16 +540,16 @@ mlfqscheduler(void)
     // It comes to here after completing, 
     // The process has to be pushed into the queue again 
     // or pushed to the lower queue
-    int qno = getmyqno(finalp);
     int qtime = getmyqtime(finalp);
-    
+
     if((finalp->state == SLEEPING) || 
     (finalp->state == RUNNABLE && qtime < (1 << qno))){
       // pushback to the same queue
+      pushback(ProcQueues[qno], finalp);
     }
     else if((finalp->state == RUNNABLE && qtime > (1 << qno))){
       // pushback to lower priority queue
-
+      updatePriority(finalp, 0);
     }
     switchkvm();
     release(&ptable.lock);
@@ -644,8 +661,14 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+    if(p->state == SLEEPING && p->chan == chan){
+
+#ifdef MLFQ
+      pushback(getmyqno(p), p);
+#endif
+
       p->state = RUNNABLE;
+    }
 }
 
 // Wake up all processes sleeping on chan.
@@ -802,11 +825,11 @@ ageProc(){
       continue;
 
     if(p->state == RUNNABLE || p->state == RUNNING){
-      // int qno = getmyqno(p);
+      int qno = getmyqno(p);
       int qtime = getmyqtime(p);
       if(p->state == RUNNING)
         // Update the processes' running time within the particular queue
-        p->state = RUNNING;
+        p->stat.actualqtime[qno]++;
       
       uint waitime = 1;
       if(p->state == RUNNABLE && qtime >= waitime){
@@ -856,7 +879,10 @@ pushback(struct Queue *queue, struct proc *p)
     panic("Tried to add a process when the queue is full");
 
   queue->list[pos] = p;
-  queue->next[queue->end] = pos;
+  if(queue->start == -1)
+    queue->start = pos;
+  if(queue->end != -1)
+    queue->next[queue->end] = pos;
   queue->size++;
 }
 
@@ -864,7 +890,7 @@ pushback(struct Queue *queue, struct proc *p)
 struct proc*
 pop(struct Queue *queue)
 {
-  if(queue->list[queue->start] == 0)
+  if(queue->list[queue->start] == 0 || queue->size == 0)
     panic("Tried to remove a process when queue was empty");
   
   struct proc *p = queue->list[queue->start];
@@ -875,6 +901,8 @@ pop(struct Queue *queue)
   queue->next[oldstart] = -1;
   
   queue->size--;
+  if(queue->size == 0)
+    queue->end = -1;
 
   return p;
 }
@@ -905,11 +933,13 @@ deletefromqueue(struct Queue *queue, int id)
   
   queue->next[poselem] = -1;
   queue->size--;
+  if(queue->size == 0)
+    queue->end = -1;
   
   return poselem;
 }
 
-// // Find idx of process given by pid
+// Find idx of process given by pid
 int
 findid(struct Queue *queue, int procpid)
 {
@@ -960,5 +990,3 @@ int
 getmyqtime(struct proc *p){
   return ticks - p->lastqtime;
 }
-
-
