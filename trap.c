@@ -110,12 +110,31 @@ trap(struct trapframe *tf)
 #else
 #ifdef PBS
   // Check for the arrival of higher priority process
+  if(myproc() && myproc()->state == RUNNING && 
+     tf->trapno == T_IRQ0 + IRQ_TIMER)
+    if(yieldhigherprior(myproc()->priority))
+      yield();
 
 #else 
 #ifdef MLFQ
   // Check for another process that is equal or higher process in the queue
   // Demote the current process
-
+  if(myproc() && myproc()->state == RUNNING &&
+     tf->trapno == T_IRQ0 + IRQ_TIMER){
+      int qno = getmyqno(myproc());
+      if(qno < 0)
+        panic("Process has invalid queue");
+      uint qtme = getmyqtime(myproc());
+      if(qtime >= (1 << qno)){
+        // TIme slice is over
+        yield();
+      }
+      else{
+        // If a higher priority process is here
+        if(yieldhigherprior(qno))
+          yield();
+      }
+    }
 #else 
   // ROUND ROBIN
 
@@ -125,12 +144,13 @@ trap(struct trapframe *tf)
      tf->trapno == T_IRQ0+IRQ_TIMER)
     yield();
 
+#endif
+#endif
+#endif
+
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
     exit();
 
-#endif
-#endif
-#endif
 
 }

@@ -53,7 +53,49 @@ struct proc {
   uint etime;                  // Process end time
   uint rtime;                  // Process run time
   uint priority;               // Process priority
+  uint lastqtime;              // Process time of joining the latest queue
 };
+
+// #ifdef MLFQ
+// Define the Queue struct that is used for MLFQ
+struct Queue {
+  int start;
+  int end;
+  uint size;
+
+  struct proc *list[NPROC];
+  int next[NPROC];
+};
+
+struct Queue *ProcQueues[NQUE];
+
+void
+pushback(struct Queue *queue, struct proc *p);
+
+struct proc*
+pop(struct Queue *queue);
+
+int 
+deletefromqueue(struct Queue *queue, int id);
+
+int
+findid(struct Queue *queue, int procpid);
+
+int
+removeproc(struct Queue *queue, struct proc *p);
+
+int
+getmyqno(struct proc *p);
+
+int
+getmyqtime(struct proc *p);
+
+void
+updatePriority(struct proc* p, int shouldincrease);
+
+// #endif
+
+
 
 // Process memory is laid out contiguously, low addresses first:
 //   text
@@ -63,3 +105,6 @@ struct proc {
 
 // Updates running processes
 void updaterunprocs();
+
+// Returns whether a higher priority process has arrived
+int yieldhigherprior(int);

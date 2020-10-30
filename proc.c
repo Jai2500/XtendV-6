@@ -480,7 +480,60 @@ priorityscheduler(void)
     switchuvm(highproc);
     highproc->state = RUNNING;
 
-    swtch(&(c->scheduler), p->context);
+    swtch(&(c->scheduler), highproc->context);
+    switchkvm();
+    release(&ptable.lock);
+  }
+}
+
+// MLFQ scheduler
+int
+mlfqscheduler(void)
+{
+  struct proc *finalp = 0;
+  struct cpu *c = mycpu();
+  c->proc = 0;
+  for(;;){
+    acquire(&ptable.lock);
+    for(int i = 0; i < NQUE; i++){
+      struct proc *p = pop(ProcQueues[i]);
+      while (p)
+      {
+        if(1){} // Check whether the process is dead
+        // If not
+        else{
+          finalp = p;
+          break;
+        }
+      }
+      if(finalp)
+        break;
+    }
+
+    if(finalp == 0){
+      release(&ptable.lock);
+      continue;
+    }
+
+    c->proc = finalp;
+    switchuvm(finalp);
+    finalp->state = RUNNING;
+
+    swtch(&(c->scheduler), finalp->context);
+    // It comes to here after completing, 
+    // The process has to be pushed into the queue again 
+    // or pushed to the lower queue
+    int qno = getmyqno(finalp);
+    int qtime = getmyqtime(finalp);
+    
+    if((finalp->state == SLEEPING) || 
+    (finalp->state == RUNNABLE && qtime < (1 << qno))){
+      // pushback to the same queue
+    }
+    else if((finalp->state == RUNNABLE && qtime > (1 << qno))){
+      // pushback to lower priority queue
+
+    }
     switchkvm();
     release(&ptable.lock);
   }
@@ -721,3 +774,191 @@ set_priority(int new_priority, int pid)
   release(&ptable.lock);
   return -1;
 }
+
+// Returns whether a process with a higher priority has arrived
+int
+yieldhighprior(int priority)
+{
+  struct proc* p;
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->priority <= priority){
+      release(&ptable.lock);
+      return 1;
+    }
+  }
+  release(&ptable.lock);
+  return 0;
+}
+
+
+// Age the processes within a queue
+void
+ageProc(){
+  acquire(&ptable.lock);
+  struct proc *p;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p == 0 || p->pid == 0 || p->killed)
+      continue;
+
+    if(p->state == RUNNABLE || p->state == RUNNING){
+      // int qno = getmyqno(p);
+      int qtime = getmyqtime(p);
+      if(p->state == RUNNING)
+        // Update the processes' running time within the particular queue
+        p->state = RUNNING;
+      
+      uint waitime = 1;
+      if(p->state == RUNNABLE && qtime >= waitime){
+        // Increase the prirority of the proceess
+        updatePriority(p, 1);
+      } 
+    }
+  }
+  release(&ptable.lock);
+}
+
+// Update the priority of a process
+void
+updatePriority(struct proc* p, int shouldincrease){
+  if(p == 0)
+    panic("Cannot update priority of invalid proccess");
+
+  int qno = getmyqno(p);
+  if(qno < 0)
+    panic("Invalid queue num of the process");
+
+  int newqno;
+  if(shouldincrease)
+    newqno = qno == 0 ? qno : qno - 1;
+  else
+    newqno = qno == NQUE? qno : qno + 1;
+  
+  if(newqno != qno){
+    removeproc(ProcQueues[qno], p);
+    pushback(ProcQueues[newqno], p);
+  }
+}
+
+
+// Push element into the queue
+void
+pushback(struct Queue *queue, struct proc *p)
+{
+  int pos = -1;
+  for(int i = 0; i < NPROC; i++){
+    if(queue->list[i] == 0){
+      pos = i;
+      break;
+    }
+  }
+  if(pos == -1)
+    panic("Tried to add a process when the queue is full");
+
+  queue->list[pos] = p;
+  queue->next[queue->end] = pos;
+  queue->size++;
+}
+
+// Pop element from the start of the queue
+struct proc*
+pop(struct Queue *queue)
+{
+  if(queue->list[queue->start] == 0)
+    panic("Tried to remove a process when queue was empty");
+  
+  struct proc *p = queue->list[queue->start];
+  
+  queue->list[queue->start] = 0;
+  int oldstart = queue->start;
+  queue->start = queue->next[queue->start];
+  queue->next[oldstart] = -1;
+  
+  queue->size--;
+
+  return p;
+}
+
+// Deletes element at particular place in queue
+int 
+deletefromqueue(struct Queue *queue, int id)
+{
+  if(id >= queue->size || id < 0)
+    return -1;
+
+  int posprevelem = -1;
+  int poselem = queue->start;
+  for(int i = 1; i < id; i++){
+    posprevelem = poselem;
+    poselem = queue->next[poselem];
+  }
+
+  queue->list[poselem] = 0;
+  
+  if(queue->end == poselem)
+    queue->end = posprevelem;
+  else if(queue->start == poselem)
+    queue->start = queue->next[poselem];
+
+  if(posprevelem != -1)
+    queue->next[posprevelem] = queue->next[poselem];
+  
+  queue->next[poselem] = -1;
+  queue->size--;
+  
+  return poselem;
+}
+
+// // Find idx of process given by pid
+int
+findid(struct Queue *queue, int procpid)
+{
+  int found = 0;
+  int count = 0;
+  int pos = queue->start;
+
+  while (queue->list[pos] != 0)
+  {
+    if(queue->list[pos]->pid == procpid){
+      found = 1;
+      break;
+    }
+    pos = queue->next[pos];
+    count++;
+  }
+
+  if(found)
+    return count;
+  else
+    return -1;
+}
+
+// Remove process from queue
+int
+removeproc(struct Queue *queue, struct proc *p){
+  int id = findid(queue, p->pid);
+  if(id < 0)
+    panic("Cannot find process within the queue");
+
+  return deletefromqueue(queue, id);
+}
+
+// Returns the qno of the process
+int
+getmyqno(struct proc *p){
+  for(int i = 0; i < NQUE; i++){
+    struct Queue *currq  = ProcQueues[i];
+    int id = findid(currq, p->pid);
+    if(id >= 0)
+      return i;
+  }  
+  return -1;
+}
+
+// Returns the time within the last queue
+int
+getmyqtime(struct proc *p){
+  return ticks - p->lastqtime;
+}
+
+
