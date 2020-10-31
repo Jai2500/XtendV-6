@@ -7,6 +7,8 @@
 #include "proc.h"
 #include "spinlock.h"
 
+#define MLFQ 1
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -94,7 +96,9 @@ found:
   p->priority = 60; // Default priority
 
 #ifdef MLFQ
-  pushback(ProcQueues[0], p); // Pushback to the highest priority queue
+  pushback(&ProcQueues[0], p); // Pushback to the highest priority queue
+  int id = findid(&ProcQueues[0], p->pid);
+  cprintf("Process allocated %d %d\n", p->pid, id);
   p->lastqtime = ticks;
 #endif
 
@@ -456,7 +460,7 @@ fcfsscheduler(void)
 
 // Priority Scheduler
 void
-scheduler(void)
+priorityscheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
@@ -496,23 +500,32 @@ scheduler(void)
 }
 
 // MLFQ scheduler
-int
-mlfqscheduler(void)
+void
+scheduler(void)
 {
   struct proc *finalp = 0;
   struct cpu *c = mycpu();
   c->proc = 0;
   for(;;){
+    // Allow the cpu to be interrupted
+    sti();
+
     acquire(&ptable.lock);
     for(int i = 0; i < NQUE; i++){
-      int pos = ProcQueues[i]->start;
-      struct proc *p = ProcQueues[i]->list[pos];
-      while (p)
+      int pos = ProcQueues[i].start;
+      // cprintf("Pos %d\n", pos);
+      if(pos < 0)
+        continue;
+      struct proc *p = ProcQueues[i].list[pos];
+      while (p != 0)
       {
+        cprintf("Process PID (L) %d\n", p->pid);
         if(p->killed || p->pid == 0 || p->state != RUNNABLE){ // Check whether the process is dead
-          pos = ProcQueues[i]->next[pos];
-          p = ProcQueues[i]->list[pos];
-          pop(ProcQueues[i]);
+          pos = ProcQueues[i].next[pos];
+          pop(&ProcQueues[i]);
+          if(pos < 0)
+            break;
+          p = ProcQueues[i].list[pos];
         }
         else{
           finalp = p;
@@ -527,12 +540,14 @@ mlfqscheduler(void)
       release(&ptable.lock);
       continue;
     }
+
+    cprintf("Process PID %d\n", finalp->pid);
     
     int qno = getmyqno(finalp);
     if(qno < 0)
       panic("Invalid queue for the process\n");
 
-    removeproc(ProcQueues[qno], finalp);
+    removeproc(&ProcQueues[qno], finalp);
     finalp->lastqtime = ticks;
     finalp->nruns++;
 
@@ -549,16 +564,19 @@ mlfqscheduler(void)
     if((finalp->state == SLEEPING) || 
     (finalp->state == RUNNABLE && qtime < (1 << qno))){
       // pushback to the same queue
-      pushback(ProcQueues[qno], finalp);
+      pushback(&ProcQueues[qno], finalp);
     }
     else if((finalp->state == RUNNABLE && qtime > (1 << qno))){
       // pushback to lower priority queue
       updatePriority(finalp, 0);
     }
+
     switchkvm();
+    c->proc = 0;
     release(&ptable.lock);
   }
 }
+
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
@@ -668,7 +686,7 @@ wakeup1(void *chan)
     if(p->state == SLEEPING && p->chan == chan){
 
 #ifdef MLFQ
-      pushback(getmyqno(p), p);
+      pushback(&ProcQueues[getmyqno(p)], p);
 #endif
 
       p->state = RUNNABLE;
@@ -862,8 +880,8 @@ updatePriority(struct proc* p, int shouldincrease){
     newqno = qno == NQUE? qno : qno + 1;
   
   if(newqno != qno){
-    removeproc(ProcQueues[qno], p);
-    pushback(ProcQueues[newqno], p);
+    removeproc(&ProcQueues[qno], p);
+    pushback(&ProcQueues[newqno], p);
   }
 }
 
@@ -981,7 +999,7 @@ removeproc(struct Queue *queue, struct proc *p){
 int
 getmyqno(struct proc *p){
   for(int i = 0; i < NQUE; i++){
-    struct Queue *currq  = ProcQueues[i];
+    struct Queue *currq  = &ProcQueues[i];
     int id = findid(currq, p->pid);
     if(id >= 0)
       return i;

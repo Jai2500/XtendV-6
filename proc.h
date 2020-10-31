@@ -75,7 +75,7 @@ struct Queue {
   int next[NPROC];
 };
 
-struct Queue *ProcQueues[NQUE];
+struct Queue ProcQueues[NQUE];
 
 void
 pushback(struct Queue *queue, struct proc *p);

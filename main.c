@@ -6,7 +6,7 @@
 #include "proc.h"
 #include "x86.h"
 
-// #define MLFQ 1
+#define MLFQ 1
 
 static void startothers(void);
 static void mpmain(void)  __attribute__((noreturn));
@@ -22,9 +22,9 @@ main(void)
 
 #ifdef MLFQ
   for(int i = 0; i < NQUE; i++){
-    ProcQueues[i]->size  =  0;
-    ProcQueues[i]->start = -1;
-    ProcQueues[i]->end   = -1;
+    ProcQueues[i].size  =  0;
+    ProcQueues[i].start = -1;
+    ProcQueues[i].end   = -1;
   }
 #endif
 

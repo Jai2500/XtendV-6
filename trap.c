@@ -8,7 +8,7 @@
 #include "traps.h"
 #include "spinlock.h"
 
-#define PBS 1
+#define MLFQ 1
 
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
@@ -127,6 +127,7 @@ trap(struct trapframe *tf)
       if(qno < 0)
         panic("Process has invalid queue");
       uint qtime = getmyqtime(myproc());
+      cprintf("Process %d Qtime %d\n", myproc()->pid, qtime);
       if(qtime >= (1 << qno)){
         // TIme slice is over
         yield();
