@@ -8,6 +8,8 @@
 #include "traps.h"
 #include "spinlock.h"
 
+#define PBS 1
+
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
@@ -124,7 +126,7 @@ trap(struct trapframe *tf)
       int qno = getmyqno(myproc());
       if(qno < 0)
         panic("Process has invalid queue");
-      uint qtme = getmyqtime(myproc());
+      uint qtime = getmyqtime(myproc());
       if(qtime >= (1 << qno)){
         // TIme slice is over
         yield();
