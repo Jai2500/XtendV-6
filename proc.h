@@ -62,6 +62,8 @@ struct proc {
   uint lastqtime;              // Process time of joining the latest queue
   struct qstats stat;          // Prrocess stats of queues for MLFQ
   uint nruns;                  // Number of times the process has been scheduled
+  int qno;
+  int qpos;
 };
 
 // #ifdef MLFQ
@@ -78,19 +80,28 @@ struct Queue {
 struct Queue ProcQueues[NQUE];
 
 void
-pushback(struct Queue *queue, struct proc *p);
+pushback(int qno, struct proc *p);
 
 struct proc*
-pop(struct Queue *queue);
+pop(int qno);
 
-int 
-deletefromqueue(struct Queue *queue, int id);
+// int 
+// deletefromqueue(struct Queue *queue, int id);
+
+// int
+// findid(struct Queue *queue, int procpid);
+
+// int
+// removeproc(struct Queue *queue, struct proc *p);
+
+struct proc*
+front(int qno);
 
 int
-findid(struct Queue *queue, int procpid);
+back(int qno);
 
 int
-removeproc(struct Queue *queue, struct proc *p);
+getmyqpos(struct proc *p);
 
 int
 getmyqno(struct proc *p);
@@ -116,3 +127,5 @@ void updaterunprocs();
 
 // Returns whether a higher priority process has arrived
 int yieldhigherprior(int);
+
+void ageprocs();

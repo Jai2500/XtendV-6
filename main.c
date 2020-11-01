@@ -23,7 +23,7 @@ main(void)
 #ifdef MLFQ
   for(int i = 0; i < NQUE; i++){
     ProcQueues[i].size  =  0;
-    ProcQueues[i].start = -1;
+    ProcQueues[i].start = 0;
     ProcQueues[i].end   = -1;
   }
 #endif

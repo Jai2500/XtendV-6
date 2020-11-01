@@ -57,6 +57,8 @@ trap(struct trapframe *tf)
       // Increase the runtime for running proccesses
       updaterunprocs();
 
+      ageprocs();
+
       wakeup(&ticks);
       release(&tickslock);
     }
@@ -123,10 +125,11 @@ trap(struct trapframe *tf)
   // Demote the current process
   if(myproc() && myproc()->state == RUNNING &&
      tf->trapno == T_IRQ0 + IRQ_TIMER){
+      // int qno = getmyqno(myproc());
       int qno = getmyqno(myproc());
       if(qno < 0)
         panic("Process has invalid queue");
-      uint qtime = getmyqtime(myproc());
+      int qtime = getmyqtime(myproc());
       cprintf("Process %d Qtime %d\n", myproc()->pid, qtime);
       if(qtime >= (1 << qno)){
         // TIme slice is over
@@ -134,8 +137,8 @@ trap(struct trapframe *tf)
       }
       else{
         // If a higher priority process is here
-        if(yieldhigherprior(qno))
-          yield();
+        // if(yieldhigherprior(qno))
+          // yield();
       }
     }
 #else 
